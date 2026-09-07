@@ -1,0 +1,32 @@
+{
+  "name": "tutorflow-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing tutoring-workflow tools (students, sessions, homework, progress reports) to AI agents like Claude Desktop and Cursor.",
+  "type": "module",
+  "main": "dist/mcp/server.js",
+  "scripts": {
+    "dev": "tsx src/mcp/server.ts",
+    "dev:http": "tsx src/mcp/http-server.ts",
+    "build": "tsc",
+    "start": "node dist/mcp/server.js",
+    "start:http": "node dist/mcp/http-server.js",
+    "db:init": "tsx src/db/init.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.0"
+  }
+}

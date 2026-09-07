@@ -56,6 +56,20 @@ function checkAuth(req: express.Request, res: express.Response): boolean {
   return false;
 }
 
+app.get("/", (_req, res) => {
+  res.json({
+    name: "tutorflow-mcp",
+    status: "running",
+    description:
+      "MCP server exposing a tutoring workflow (students, sessions, homework, progress reports) to AI agents.",
+    endpoints: {
+      health: "GET /health",
+      mcp: "POST/GET/DELETE /mcp — not a webpage; connect with an MCP client (see project README)",
+    },
+    source: "https://github.com/YOUR_USERNAME/tutorflow-mcp",
+  });
+});
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });

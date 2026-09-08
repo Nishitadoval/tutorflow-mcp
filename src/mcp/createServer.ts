@@ -3,6 +3,7 @@ import { registerListStudents } from "./tools/listStudents.js";
 import { registerGetStudentProgress } from "./tools/getStudentProgress.js";
 import { registerLogSessionNote } from "./tools/logSessionNote.js";
 import { registerAssignHomework } from "./tools/assignHomework.js";
+import { registerDeleteHomework } from "./tools/deleteHomework.js";
 import { registerGenerateProgressReport } from "./tools/generateProgressReport.js";
 
 /**
@@ -24,6 +25,7 @@ export function createTutorFlowServer(): McpServer {
   registerGetStudentProgress(server);
   registerLogSessionNote(server);
   registerAssignHomework(server);
+  registerDeleteHomework(server);
   registerGenerateProgressReport(server);
 
   return server;

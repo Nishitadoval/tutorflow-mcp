@@ -48,7 +48,9 @@ export function registerGetStudentProgress(server: McpServer) {
         : "No sessions logged yet.";
 
       const homeworkText = homework.length
-        ? homework.map((h) => `- [ ] ${h.description} (due ${h.due_date ?? "no date"})`).join("\n")
+        ? homework
+            .map((h) => `- [id ${h.id}] ${h.description} (due ${h.due_date ?? "no date"})`)
+            .join("\n")
         : "No open homework.";
 
       const text = `${student.name} (${student.grade ?? "grade unknown"}, focus: ${

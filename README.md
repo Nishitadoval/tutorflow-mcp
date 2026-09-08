@@ -27,6 +27,9 @@ report tool's actual LLM call needs your own `ANTHROPIC_API_KEY` to try live):
   fetches: calls the Anthropic API to turn shorthand session notes into a
   short, parent-friendly summary. Defaults to draft-only; pass `save: true`
   to store it in `progress_notes`. Requires `ANTHROPIC_API_KEY`.
+- `delete_homework` — **write (deletion).** Same preview/`confirm: true`
+  pattern. `get_student_progress` now shows each homework item's id, which
+  this tool needs — useful for cleaning up accidental duplicates.
 
 Streamable HTTP transport is also implemented (`src/mcp/http-server.ts`) —
 tested end to end with a real HTTP client: unauthenticated requests
@@ -160,12 +163,13 @@ mangling the spaces in the value:
 
 ## Guardrails note
 
-`log_session_note`, `assign_homework`, and `generate_progress_report` (when
-saving) all default to a **preview-only** response and only write when
-called again with `confirm: true` (or `save: true` for the report). This
-means an agent can't silently write to your data on a single ambiguous
-request — it has to show you exactly what it's about to save first. Worth
-keeping this pattern for every future write tool.
+`log_session_note`, `assign_homework`, `delete_homework`, and
+`generate_progress_report` (when saving) all default to a **preview-only**
+response and only write when called again with `confirm: true` (or
+`save: true` for the report). This means an agent can't silently write to
+or delete your data on a single ambiguous request — it has to show you
+exactly what it's about to change first. Worth keeping this pattern for
+every future write tool.
 
 ## Setting ANTHROPIC_API_KEY
 

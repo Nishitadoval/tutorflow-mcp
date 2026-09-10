@@ -1,13 +1,13 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { db } from "../../db/client.js";
-import type { StudentRow } from "../../types.js";
+import { getStudentById } from "../../services/students.js";
+import { assignHomework as assignHomeworkService } from "../../services/homework.js";
 
 /**
  * assign_homework
  *
- * Write tool. Same confirm-before-write shape as log_session_note: without
- * confirm: true it only previews what would be created.
+ * Write tool. Same confirm-before-write shape as log_session_note. Thin
+ * wrapper over the shared homework service.
  */
 export function registerAssignHomework(server: McpServer) {
   server.tool(
@@ -29,9 +29,7 @@ export function registerAssignHomework(server: McpServer) {
         .describe("Set true to actually create the assignment. Defaults to false (preview only)."),
     },
     async ({ student_id, description, due_date, confirm }) => {
-      const student = db
-        .prepare(`SELECT * FROM students WHERE id = ?`)
-        .get(student_id) as StudentRow | undefined;
+      const student = getStudentById(student_id);
 
       if (!student) {
         return {
@@ -56,9 +54,7 @@ export function registerAssignHomework(server: McpServer) {
         };
       }
 
-      db.prepare(
-        `INSERT INTO homework_items (student_id, description, due_date) VALUES (?, ?, ?)`
-      ).run(student_id, description, due_date ?? null);
+      assignHomeworkService(student_id, description, due_date);
 
       return {
         content: [

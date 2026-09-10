@@ -7,9 +7,11 @@
   "scripts": {
     "dev": "tsx src/mcp/server.ts",
     "dev:http": "tsx src/mcp/http-server.ts",
+    "dev:api": "tsx src/api/server.ts",
     "build": "tsc",
     "start": "node dist/mcp/server.js",
     "start:http": "node dist/mcp/http-server.js",
+    "start:api": "node dist/api/server.js",
     "db:init": "tsx src/db/init.ts"
   },
   "dependencies": {

@@ -1,14 +1,16 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { db } from "../../db/client.js";
-import type { StudentRow, SessionRow, HomeworkRow } from "../../types.js";
+import { getStudentById } from "../../services/students.js";
+import { listRecentSessions } from "../../services/sessions.js";
+import { listOpenHomework } from "../../services/homework.js";
 
 /**
  * get_student_progress
  *
  * Read-only tool. Given a student_id, returns recent session notes and open
  * homework so an agent (or you, via chat) can answer "how is Aiden doing?"
- * without opening the dashboard.
+ * without opening the dashboard. Thin wrapper over the shared services —
+ * the REST API's GET /api/students/:id route composes the same three calls.
  */
 export function registerGetStudentProgress(server: McpServer) {
   server.tool(
@@ -19,9 +21,7 @@ export function registerGetStudentProgress(server: McpServer) {
       student_id: z.number().int().describe("The student's id, from list_students"),
     },
     async ({ student_id }) => {
-      const student = db
-        .prepare(`SELECT * FROM students WHERE id = ?`)
-        .get(student_id) as StudentRow | undefined;
+      const student = getStudentById(student_id);
 
       if (!student) {
         return {
@@ -30,18 +30,8 @@ export function registerGetStudentProgress(server: McpServer) {
         };
       }
 
-      const sessions = db
-        .prepare(
-          `SELECT * FROM sessions WHERE student_id = ? ORDER BY session_date DESC LIMIT 5`
-        )
-        .all(student_id) as SessionRow[];
-
-      const homework = db
-        .prepare(
-          `SELECT * FROM homework_items WHERE student_id = ? AND completed = 0
-           ORDER BY due_date ASC`
-        )
-        .all(student_id) as HomeworkRow[];
+      const sessions = listRecentSessions(student_id, 5);
+      const homework = listOpenHomework(student_id);
 
       const sessionText = sessions.length
         ? sessions.map((s) => `- ${s.session_date}: ${s.note}`).join("\n")

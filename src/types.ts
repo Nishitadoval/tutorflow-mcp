@@ -23,3 +23,10 @@ export interface HomeworkRow {
   completed: number;
   created_at: string;
 }
+
+export interface ProgressNoteRow {
+  id: number;
+  student_id: number;
+  summary: string;
+  created_at: string;
+}

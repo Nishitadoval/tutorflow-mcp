@@ -15,7 +15,7 @@ context every session.
 
 ## Status
 
-Five tools implemented and smoke-tested end to end (write tools and the
+Six tools implemented and smoke-tested end to end (write tools and the
 report tool's error path all verified with a scripted MCP client; the
 report tool's actual LLM call needs your own `ANTHROPIC_API_KEY` to try live):
 
@@ -23,22 +23,27 @@ report tool's actual LLM call needs your own `ANTHROPIC_API_KEY` to try live):
 - `get_student_progress` — recent session notes + open homework for one student
 - `log_session_note` — **write.** Defaults to preview-only; pass `confirm: true` to save.
 - `assign_homework` — **write.** Same preview/`confirm: true` pattern.
+- `delete_homework` — **write (deletion).** Same preview/`confirm: true`
+  pattern. `get_student_progress` now shows each homework item's id, which
+  this tool needs — useful for cleaning up accidental duplicates.
 - `generate_progress_report` — the one tool that reasons rather than just
   fetches: calls the Anthropic API to turn shorthand session notes into a
   short, parent-friendly summary. Defaults to draft-only; pass `save: true`
   to store it in `progress_notes`. Requires `ANTHROPIC_API_KEY`.
-- `delete_homework` — **write (deletion).** Same preview/`confirm: true`
-  pattern. `get_student_progress` now shows each homework item's id, which
-  this tool needs — useful for cleaning up accidental duplicates.
 
 Streamable HTTP transport is also implemented (`src/mcp/http-server.ts`) —
 tested end to end with a real HTTP client: unauthenticated requests
 correctly rejected, session creation, `tools/list`, `tools/call`, and
 session termination all verified.
 
+The actual tool logic (DB queries and writes) lives in `src/services/*.ts`,
+shared by the MCP tools. A REST API (`src/api/server.ts`) now sits on the
+same services and same database — full read/write/PATCH/DELETE flow tested
+end to end with real HTTP calls — as the backend for the Angular dashboard.
+
 Planned next (see build plan):
 
-- Angular dashboard as a second frontend onto the same data
+- Angular dashboard consuming the REST API above
 
 ## Architecture
 
@@ -51,19 +56,27 @@ Claude Desktop (local)          Claude.ai / remote client
         └───────────────┬───────────────┘
                          ▼
               src/mcp/createServer.ts
-              — builds a fresh McpServer, registers all 5 tools
+              — builds a fresh McpServer, registers all 6 tools
                          │
                          ▼
               src/mcp/tools/*.ts  — one file per tool: zod schema + handler
                          │
                          ▼
-              src/db/client.ts   — SQLite connection (better-sqlite3)
-              tutorflow.db        — local dev database
+              src/services/*.ts  — the actual business logic, shared
+                         │            ▲
+                         ▼            │
+              src/db/client.ts       src/api/server.ts  (Angular dashboard)
+              tutorflow.db            — plain REST routes over the same
+              — local dev database      services, for the human-facing UI
 ```
 
-Both entry points share the same tool implementations via
-`createTutorFlowServer()` — the tools themselves don't know or care whether
-they're being called over stdio or HTTP.
+Both the MCP tools and the REST API sit on top of the same
+`src/services/*.ts` layer and the same SQLite database — neither is the
+source of truth for the other. The MCP write tools use a preview-then-
+confirm round trip because an agent might otherwise act on ambiguous
+instructions unsupervised; the REST API skips that ceremony because a
+human clicking a UI button (with its own confirm dialog) already serves
+the same purpose.
 
 Each tool file follows the same shape on purpose: a zod schema for
 arguments, a handler that queries the DB, and a `registerX(server)` function
@@ -97,6 +110,22 @@ Add this to your Claude Desktop MCP config
 
 Restart Claude Desktop, then try asking: *"List my students"* or *"How is
 Aiden doing?"*
+
+## REST API (for the dashboard)
+
+```bash
+npm run dev:api   # http://localhost:3001
+```
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/students?search=` | List students |
+| GET | `/api/students/:id` | Student + sessions + open homework + saved reports |
+| POST | `/api/students/:id/sessions` | Log a session note — `{ session_date, note }` |
+| POST | `/api/students/:id/homework` | Assign homework — `{ description, due_date? }` |
+| PATCH | `/api/homework/:id` | Toggle completed — `{ completed: boolean }` |
+| DELETE | `/api/homework/:id` | Delete a homework item |
+| POST | `/api/students/:id/progress-report` | Draft a report; `{ save: true }` to store it |
 
 ## Running the HTTP server locally
 

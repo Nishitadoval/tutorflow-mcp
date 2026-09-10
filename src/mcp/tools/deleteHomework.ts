@@ -1,16 +1,13 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { db } from "../../db/client.js";
-import type { HomeworkRow, StudentRow } from "../../types.js";
+import { getStudentById } from "../../services/students.js";
+import { getHomeworkById, deleteHomeworkById } from "../../services/homework.js";
 
 /**
  * delete_homework
  *
  * Write tool (deletion). Same confirm-before-write shape as the other write
- * tools: without confirm: true it only previews what would be removed.
- * Use get_student_progress first to find the homework_id — it now shows
- * each item's id, which is what this tool needs (useful for cleaning up
- * accidental duplicates, among other things).
+ * tools. Use get_student_progress first to find the homework_id.
  */
 export function registerDeleteHomework(server: McpServer) {
   server.tool(
@@ -27,9 +24,7 @@ export function registerDeleteHomework(server: McpServer) {
         .describe("Set true to actually delete the item. Defaults to false (preview only)."),
     },
     async ({ homework_id, confirm }) => {
-      const item = db
-        .prepare(`SELECT * FROM homework_items WHERE id = ?`)
-        .get(homework_id) as HomeworkRow | undefined;
+      const item = getHomeworkById(homework_id);
 
       if (!item) {
         return {
@@ -38,9 +33,7 @@ export function registerDeleteHomework(server: McpServer) {
         };
       }
 
-      const student = db
-        .prepare(`SELECT * FROM students WHERE id = ?`)
-        .get(item.student_id) as StudentRow | undefined;
+      const student = getStudentById(item.student_id);
 
       if (!confirm) {
         return {
@@ -57,7 +50,7 @@ export function registerDeleteHomework(server: McpServer) {
         };
       }
 
-      db.prepare(`DELETE FROM homework_items WHERE id = ?`).run(homework_id);
+      deleteHomeworkById(homework_id);
 
       return {
         content: [

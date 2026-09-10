@@ -1,17 +1,15 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { db } from "../../db/client.js";
-import type { StudentRow } from "../../types.js";
+import { getStudentById } from "../../services/students.js";
+import { logSessionNote as logSessionNoteService } from "../../services/sessions.js";
 
 /**
  * log_session_note
  *
- * Write tool. Unlike the two read-only tools, this changes data — so it
+ * Write tool. Unlike the read-only tools, this changes data — so it
  * requires an explicit confirm: true before it actually writes anything.
  * Called without confirm, it echoes back exactly what it's about to write
- * and stops, giving the person (or the agent, if it's being cautious) a
- * chance to review before committing. This is the pattern every write tool
- * in this project follows.
+ * and stops. Thin wrapper over the shared sessions service.
  */
 export function registerLogSessionNote(server: McpServer) {
   server.tool(
@@ -32,9 +30,7 @@ export function registerLogSessionNote(server: McpServer) {
         .describe("Set true to actually save the note. Defaults to false (preview only)."),
     },
     async ({ student_id, session_date, note, confirm }) => {
-      const student = db
-        .prepare(`SELECT * FROM students WHERE id = ?`)
-        .get(student_id) as StudentRow | undefined;
+      const student = getStudentById(student_id);
 
       if (!student) {
         return {
@@ -57,9 +53,7 @@ export function registerLogSessionNote(server: McpServer) {
         };
       }
 
-      db.prepare(
-        `INSERT INTO sessions (student_id, session_date, note) VALUES (?, ?, ?)`
-      ).run(student_id, session_date, note);
+      logSessionNoteService(student_id, session_date, note);
 
       return {
         content: [

@@ -28,8 +28,11 @@ report tool's actual LLM call needs your own `ANTHROPIC_API_KEY` to try live):
   this tool needs — useful for cleaning up accidental duplicates.
 - `generate_progress_report` — the one tool that reasons rather than just
   fetches: calls the Anthropic API to turn shorthand session notes into a
-  short, parent-friendly summary. Defaults to draft-only; pass `save: true`
-  to store it in `progress_notes`. Requires `ANTHROPIC_API_KEY`.
+  short, parent-friendly summary. Defaults to draft-only. To store it, call
+  again with `save: true` AND `summary` set to the exact draft text —
+  saving requires the precise text back, rather than silently regenerating
+  a new (and possibly different) summary on save. Requires `ANTHROPIC_API_KEY`
+  for drafting; saving an already-drafted summary doesn't call the LLM again.
 
 Streamable HTTP transport is also implemented (`src/mcp/http-server.ts`) —
 tested end to end with a real HTTP client: unauthenticated requests
@@ -48,26 +51,29 @@ Planned next (see build plan):
 ## Architecture
 
 ```
-Claude Desktop (local)          Claude.ai / remote client
-        │  stdio                        │  Streamable HTTP
+Claude Desktop (local)          Angular dashboard (deployed or local)
+        │  stdio                        │  HTTPS
         ▼                               ▼
-  src/mcp/server.ts          src/mcp/http-server.ts
-  (spawned subprocess)       (Express + session map + bearer auth)
+  src/mcp/server.ts          src/mcp/http-server.ts  (deployed to Render)
+  (spawned subprocess)       Express app serving BOTH:
+                                /mcp  — MCP Streamable HTTP, bearer auth
+                                /api  — REST routes, scoped CORS + rate limit
         └───────────────┬───────────────┘
                          ▼
-              src/mcp/createServer.ts
-              — builds a fresh McpServer, registers all 6 tools
+              src/mcp/createServer.ts (MCP)  /  src/api/router.ts (REST)
+              — MCP: builds a fresh McpServer, registers all 6 tools
+              — REST: mountable router, same routes whether run standalone
+                (api/server.ts, local dev) or mounted in http-server.ts
                          │
                          ▼
-              src/mcp/tools/*.ts  — one file per tool: zod schema + handler
+              src/mcp/tools/*.ts  — one file per MCP tool: zod schema + handler
                          │
                          ▼
               src/services/*.ts  — the actual business logic, shared
-                         │            ▲
-                         ▼            │
-              src/db/client.ts       src/api/server.ts  (Angular dashboard)
-              tutorflow.db            — plain REST routes over the same
-              — local dev database      services, for the human-facing UI
+                         │
+                         ▼
+              src/db/client.ts   — SQLite connection (better-sqlite3)
+              tutorflow.db        — local dev database
 ```
 
 Both the MCP tools and the REST API sit on top of the same
@@ -125,7 +131,8 @@ npm run dev:api   # http://localhost:3001
 | POST | `/api/students/:id/homework` | Assign homework — `{ description, due_date? }` |
 | PATCH | `/api/homework/:id` | Toggle completed — `{ completed: boolean }` |
 | DELETE | `/api/homework/:id` | Delete a homework item |
-| POST | `/api/students/:id/progress-report` | Draft a report; `{ save: true }` to store it |
+| POST | `/api/students/:id/progress-report/draft` | Draft a report (calls the LLM) — returns `{ summary }`, doesn't save |
+| POST | `/api/students/:id/progress-report` | Save an exact summary — `{ summary }` (from a prior `/draft` call). Doesn't call the LLM again. |
 
 ## Running the HTTP server locally
 
@@ -141,21 +148,26 @@ not real per-user auth.
 
 ## Deploying
 
+`npm run start:http` (see below) is a single process that serves the MCP
+transport, the REST API, and the landing page together — the one thing you
+deploy to cover both the AI-agent path and the dashboard.
+
 1. Push this repo (see `.gitignore` — `node_modules`, `dist`, and `*.db`
    are already excluded).
 2. On Render or Railway, create a new web service pointing at the repo with
    build command `npm install && npm run build` and start command
    `npm run start:http`.
 3. Set environment variables on the platform: `ANTHROPIC_API_KEY`,
-   `MCP_AUTH_TOKEN` (generate a random string — this is your server's
-   password, keep it secret), and optionally `DB_PATH` if you want the
-   SQLite file somewhere specific. `PORT` is usually set automatically by
+   `MCP_AUTH_TOKEN` (generate a random string — this is your MCP endpoint's
+   password), `DASHBOARD_ORIGIN` (your deployed dashboard's exact URL, once
+   you have it — see the dashboard repo's README for the deploy-order
+   note), and optionally `DB_PATH`. `PORT` is usually set automatically by
    the platform.
 4. Note SQLite lives on local disk — fine for a demo, but if the platform's
    filesystem isn't persistent across deploys/restarts your data resets.
    For anything beyond a portfolio demo, swap `better-sqlite3` for a
    Postgres client (`pg`) pointed at a free Supabase/Neon instance instead —
-   the query shapes in `src/mcp/tools/*.ts` stay almost identical.
+   the query shapes in `src/services/*.ts` stay almost identical.
 
 ## Connecting a remote client to the deployed server
 
@@ -199,6 +211,12 @@ response and only write when called again with `confirm: true` (or
 or delete your data on a single ambiguous request — it has to show you
 exactly what it's about to change first. Worth keeping this pattern for
 every future write tool.
+
+For `generate_progress_report` specifically, this means "confirm" isn't
+just a flag: saving requires passing the exact draft `summary` text back,
+not just `save: true`. An LLM call isn't deterministic, so if saving
+re-drafted the report instead of persisting the reviewed text, the
+preview-then-confirm guarantee would be silently broken for this one tool.
 
 ## Setting ANTHROPIC_API_KEY
 

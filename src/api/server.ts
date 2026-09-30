@@ -1,147 +1,48 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { listStudents, getStudentById } from "../services/students.js";
-import { listRecentSessions, logSessionNote } from "../services/sessions.js";
-import {
-  listOpenHomework,
-  getHomeworkById,
-  assignHomework,
-  deleteHomeworkById,
-  setHomeworkCompleted,
-} from "../services/homework.js";
-import {
-  draftProgressReport,
-  saveProgressReport,
-  listProgressReports,
-} from "../services/progressReports.js";
+import rateLimit from "express-rate-limit";
+import { createApiRouter } from "./router.js";
 
 /**
- * REST API for the Angular dashboard. Built on the exact same services and
- * SQLite database as the MCP tools (see src/services/*.ts) — this is the
- * "human via UI" interface onto the same data the "AI agent via MCP"
- * interface uses. Neither one is the source of truth for the other; the DB
- * is, and both interfaces sit on top of it.
+ * Standalone REST API process for local development (npm run dev:api).
+ * For deployment, mcp/http-server.ts mounts the same router alongside the
+ * MCP transport so one service handles both — see that file. This entry
+ * point still exists so you can develop and test the dashboard's backend
+ * on its own port without also standing up the MCP transport.
  *
- * Note on write semantics: the MCP write tools use a preview-then-confirm
- * round trip because an agent might otherwise act on ambiguous instructions
- * unsupervised. Here, a human clicking a UI button (with the browser-side
- * confirm dialog Angular will show before a delete) serves the same
- * purpose, so these routes just perform the action directly.
+ * Access control, honestly stated: this is a public-facing SPA, so there's
+ * no way to hide a shared secret from anyone who opens the browser's
+ * network tab. Rather than pretend otherwise with a fake-secure token,
+ * this restricts CORS to the one known dashboard origin (DASHBOARD_ORIGIN)
+ * and rate-limits every route. Good enough for a public demo seeded with
+ * fake data, not a substitute for real auth on anything that matters.
  */
 
 const PORT = process.env.API_PORT ?? 3001;
+const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN;
+
+if (!DASHBOARD_ORIGIN) {
+  console.warn(
+    "DASHBOARD_ORIGIN is not set — this API will accept requests from any origin. " +
+      "Set it to your deployed dashboard's exact URL before treating this as a real public deployment."
+  );
+}
+
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(cors({ origin: DASHBOARD_ORIGIN ?? "*" }));
+app.use(
+  rateLimit({
+    windowMs: 60_000,
+    limit: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests — slow down and try again shortly." },
+  })
+);
 
-app.get("/api/students", (req, res) => {
-  const search = typeof req.query.search === "string" ? req.query.search : undefined;
-  res.json(listStudents(search));
-});
-
-app.get("/api/students/:id", (req, res) => {
-  const id = Number(req.params.id);
-  const student = getStudentById(id);
-  if (!student) {
-    res.status(404).json({ error: `No student found with id ${id}` });
-    return;
-  }
-  res.json({
-    student,
-    sessions: listRecentSessions(id, 10),
-    homework: listOpenHomework(id),
-    progressReports: listProgressReports(id),
-  });
-});
-
-app.post("/api/students/:id/sessions", (req, res) => {
-  const id = Number(req.params.id);
-  const student = getStudentById(id);
-  if (!student) {
-    res.status(404).json({ error: `No student found with id ${id}` });
-    return;
-  }
-  const { session_date, note } = req.body ?? {};
-  if (!session_date || !note) {
-    res.status(400).json({ error: "session_date and note are required" });
-    return;
-  }
-  const created = logSessionNote(id, session_date, note);
-  res.status(201).json(created);
-});
-
-app.post("/api/students/:id/homework", (req, res) => {
-  const id = Number(req.params.id);
-  const student = getStudentById(id);
-  if (!student) {
-    res.status(404).json({ error: `No student found with id ${id}` });
-    return;
-  }
-  const { description, due_date } = req.body ?? {};
-  if (!description) {
-    res.status(400).json({ error: "description is required" });
-    return;
-  }
-  const created = assignHomework(id, description, due_date ?? null);
-  res.status(201).json(created);
-});
-
-app.patch("/api/homework/:id", (req, res) => {
-  const id = Number(req.params.id);
-  const item = getHomeworkById(id);
-  if (!item) {
-    res.status(404).json({ error: `No homework item found with id ${id}` });
-    return;
-  }
-  const { completed } = req.body ?? {};
-  if (typeof completed !== "boolean") {
-    res.status(400).json({ error: "completed (boolean) is required" });
-    return;
-  }
-  res.json(setHomeworkCompleted(id, completed));
-});
-
-app.delete("/api/homework/:id", (req, res) => {
-  const id = Number(req.params.id);
-  const deleted = deleteHomeworkById(id);
-  if (!deleted) {
-    res.status(404).json({ error: `No homework item found with id ${id}` });
-    return;
-  }
-  res.status(204).send();
-});
-
-app.post("/api/students/:id/progress-report", async (req, res) => {
-  const id = Number(req.params.id);
-  const student = getStudentById(id);
-  if (!student) {
-    res.status(404).json({ error: `No student found with id ${id}` });
-    return;
-  }
-  const sessions = listRecentSessions(id, 8);
-  if (sessions.length === 0) {
-    res.status(422).json({ error: "No logged sessions yet — nothing to summarize" });
-    return;
-  }
-
-  let summary: string;
-  try {
-    summary = await draftProgressReport(student, sessions);
-  } catch {
-    res.status(503).json({ error: "ANTHROPIC_API_KEY is not set on the server" });
-    return;
-  }
-
-  const save = req.body?.save === true;
-  if (save) {
-    const saved = saveProgressReport(id, summary);
-    res.status(201).json(saved);
-    return;
-  }
-  res.json({ summary, saved: false });
-});
-
+app.use("/api", createApiRouter());
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
 app.listen(PORT, () => {

@@ -41,3 +41,23 @@ export function setHomeworkCompleted(homeworkId: number, completed: boolean): Ho
   db.prepare(`UPDATE homework_items SET completed = ? WHERE id = ?`).run(completed ? 1 : 0, homeworkId);
   return getHomeworkById(homeworkId);
 }
+
+/** Grouped count of overdue, incomplete homework per student — a single
+ * query rather than one per student. Used by the REST API's student list
+ * endpoint so the dashboard roster can show a real "needs attention"
+ * indicator instead of a decorative one. "Overdue" = due_date is before
+ * today and the item isn't marked completed. Items with no due_date never
+ * count as overdue. */
+export function countOverdueByStudent(): Record<number, number> {
+  const rows = db
+    .prepare(
+      `SELECT student_id, COUNT(*) as count FROM homework_items
+       WHERE completed = 0 AND due_date IS NOT NULL AND due_date < date('now')
+       GROUP BY student_id`
+    )
+    .all() as { student_id: number; count: number }[];
+
+  const result: Record<number, number> = {};
+  for (const row of rows) result[row.student_id] = row.count;
+  return result;
+}

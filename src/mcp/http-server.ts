@@ -1,48 +1,58 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createTutorFlowServer } from "./createServer.js";
+import { createApiRouter } from "../api/router.js";
 
 /**
- * Deployable HTTP entry point. Run this instead of server.ts when hosting
- * on Render/Railway/etc. so the MCP server is reachable over the network
- * rather than only spawnable as a local subprocess.
+ * Deployable HTTP entry point — the one process meant for Render/Railway.
+ * Serves THREE things on one port, since a single free-tier service is the
+ * practical choice for a portfolio deployment:
+ *   - /mcp   — the MCP Streamable HTTP transport, for AI agents
+ *   - /api   — the same REST routes api/server.ts exposes standalone, for
+ *              the deployed Angular dashboard (mounted from api/router.ts
+ *              so the route logic isn't duplicated between the two entry
+ *              points)
+ *   - /health, / — status/landing
  *
- * Uses stateful sessions: the first request (an "initialize") gets a new
- * session id and its own McpServer + transport pair, tracked in-memory in
- * `transports` below. Every later request from that client includes the
- * Mcp-Session-Id header and gets routed to its existing transport. This
- * matches the pattern in the MCP SDK's own Streamable HTTP examples.
- *
- * Auth: if MCP_AUTH_TOKEN is set, every request must include
+ * MCP auth: if MCP_AUTH_TOKEN is set, every /mcp request needs
  * `Authorization: Bearer <token>`. This is a single shared secret, not
  * per-user auth — enough to keep a demo deployment from being open to
- * anyone who finds the URL, not a substitute for real auth if this ever
- * serves more than one person.
+ * anyone who finds the URL.
+ *
+ * REST API access control, honestly stated: this is a public-facing SPA,
+ * so there's no way to hide a shared secret from anyone who opens the
+ * browser's network tab — a static frontend can't authenticate the way a
+ * server-side client can. Rather than pretend otherwise, /api instead (a)
+ * restricts CORS to the one known dashboard origin via DASHBOARD_ORIGIN,
+ * and (b) rate-limits every route so even direct requests can't be used to
+ * spam or scrape it. Good enough for a public demo seeded with fake data,
+ * not a substitute for real auth on anything that matters.
  */
 
 const PORT = process.env.PORT ?? 3000;
 const AUTH_TOKEN = process.env.MCP_AUTH_TOKEN;
+const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN;
 
 if (!AUTH_TOKEN) {
   console.warn(
-    "MCP_AUTH_TOKEN is not set — this server will accept unauthenticated requests. " +
+    "MCP_AUTH_TOKEN is not set — /mcp will accept unauthenticated requests. " +
       "Set it before deploying anywhere publicly reachable."
+  );
+}
+if (!DASHBOARD_ORIGIN) {
+  console.warn(
+    "DASHBOARD_ORIGIN is not set — /api will accept requests from any origin. " +
+      "Set it to your deployed dashboard's exact URL before treating this as a real public deployment."
   );
 }
 
 const app = express();
 app.use(express.json());
-app.use(
-  cors({
-    origin: "*",
-    exposedHeaders: ["Mcp-Session-Id"],
-    allowedHeaders: ["Content-Type", "Mcp-Session-Id", "Authorization"],
-  })
-);
 
 function checkAuth(req: express.Request, res: express.Response): boolean {
   if (!AUTH_TOKEN) return true; // auth disabled — see warning above
@@ -61,10 +71,11 @@ app.get("/", (_req, res) => {
     name: "tutorflow-mcp",
     status: "running",
     description:
-      "MCP server exposing a tutoring workflow (students, sessions, homework, progress reports) to AI agents.",
+      "MCP server exposing a tutoring workflow (students, sessions, homework, progress reports) to AI agents, plus a REST API for the companion Angular dashboard.",
     endpoints: {
       health: "GET /health",
       mcp: "POST/GET/DELETE /mcp — not a webpage; connect with an MCP client (see project README)",
+      api: "GET/POST/PATCH/DELETE /api/* — REST API for the dashboard",
     },
     source: "https://github.com/YOUR_USERNAME/tutorflow-mcp",
   });
@@ -73,6 +84,32 @@ app.get("/", (_req, res) => {
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
+
+// --- /api: REST routes for the dashboard, scoped CORS + rate limiting ---
+const apiRouter = express.Router();
+apiRouter.use(cors({ origin: DASHBOARD_ORIGIN ?? "*" }));
+apiRouter.use(
+  rateLimit({
+    windowMs: 60_000,
+    limit: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests — slow down and try again shortly." },
+  })
+);
+apiRouter.use(createApiRouter());
+app.use("/api", apiRouter);
+
+// --- /mcp: MCP Streamable HTTP transport, its own CORS for the protocol's
+// required headers, separate from the dashboard's CORS above ---
+app.use(
+  "/mcp",
+  cors({
+    origin: "*",
+    exposedHeaders: ["Mcp-Session-Id"],
+    allowedHeaders: ["Content-Type", "Mcp-Session-Id", "Authorization"],
+  })
+);
 
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 
@@ -139,5 +176,5 @@ app.delete("/mcp", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.error(`tutorflow-mcp HTTP server listening on port ${PORT}`);
+  console.error(`tutorflow-mcp HTTP server listening on port ${PORT} (MCP at /mcp, REST API at /api)`);
 });

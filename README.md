@@ -163,8 +163,12 @@ deploy to cover both the AI-agent path and the dashboard.
    you have it — see the dashboard repo's README for the deploy-order
    note), and optionally `DB_PATH`. `PORT` is usually set automatically by
    the platform.
-4. Note SQLite lives on local disk — fine for a demo, but if the platform's
-   filesystem isn't persistent across deploys/restarts your data resets.
+4. SQLite lives on local disk, and free tiers (including Render's) wipe it on
+   every deploy and restart. The deployed server therefore creates its own
+   tables on startup and seeds a few demo students when the database is
+   empty (set `SEED_DEMO_DATA=false` to skip the seeding) — no manual
+   `db:init` needed, and a restart quietly resets any changes to the public
+   demo. That also means data you add on the free tier is temporary.
    For anything beyond a portfolio demo, swap `better-sqlite3` for a
    Postgres client (`pg`) pointed at a free Supabase/Neon instance instead —
    the query shapes in `src/services/*.ts` stay almost identical.

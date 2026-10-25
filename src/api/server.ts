@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { createApiRouter } from "./router.js";
+import { bootstrapDatabase } from "../db/bootstrap.js";
 
 /**
  * Standalone REST API process for local development (npm run dev:api).
@@ -28,6 +29,8 @@ if (!DASHBOARD_ORIGIN) {
       "Set it to your deployed dashboard's exact URL before treating this as a real public deployment."
   );
 }
+
+bootstrapDatabase({ seedIfEmpty: false });
 
 const app = express();
 app.use(express.json());

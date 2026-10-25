@@ -7,6 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createTutorFlowServer } from "./createServer.js";
 import { createApiRouter } from "../api/router.js";
+import { bootstrapDatabase } from "../db/bootstrap.js";
 
 /**
  * Deployable HTTP entry point — the one process meant for Render/Railway.
@@ -37,6 +38,14 @@ import { createApiRouter } from "../api/router.js";
 const PORT = process.env.PORT ?? 3000;
 const AUTH_TOKEN = process.env.MCP_AUTH_TOKEN;
 const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN;
+
+// Hosted free tiers wipe the disk on every deploy/restart, so the server
+// creates its own tables on startup instead of relying on a manual
+// `db:init`. It also seeds a few demo students when the database is empty
+// so a fresh deploy has something to show (and a restart quietly undoes any
+// vandalism of the public demo). Set SEED_DEMO_DATA=false to skip seeding.
+const { seeded } = bootstrapDatabase({ seedIfEmpty: process.env.SEED_DEMO_DATA !== "false" });
+console.error(seeded ? "Database was empty — seeded demo students." : "Database ready.");
 
 if (!AUTH_TOKEN) {
   console.warn(

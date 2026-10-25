@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createTutorFlowServer } from "./createServer.js";
+import { bootstrapDatabase } from "../db/bootstrap.js";
 
 /**
  * stdio entry point — used for local development and Claude Desktop, which
@@ -8,6 +9,7 @@ import { createTutorFlowServer } from "./createServer.js";
  * http-server.ts for the deployable, network-reachable version.
  */
 async function main() {
+  bootstrapDatabase({ seedIfEmpty: false }); // tables only; no demo data in your real DB
   const server = createTutorFlowServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
